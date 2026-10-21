@@ -1,0 +1,9 @@
+{
+  "light": {"name":"Light","bg":"ffffff","panel":"f4f2fc","paper":"ffffff","text":"202020","muted":"626262","line":"d7d0ef","accent":"9d8cff","tint":"eee9ff","select":"dcd3ff","highlight":"fff0a8","white":"ffffff","dark":false},
+  "dark": {"name":"Dark","bg":"181d1c","panel":"202724","paper":"181d1c","text":"e4e8de","muted":"a1ada1","line":"35413a","accent":"a4c9a7","tint":"304638","select":"405a47","highlight":"61572c","white":"242e28","dark":true},
+  "nord": {"name":"Nord","bg":"2e3440","panel":"3b4252","paper":"2e3440","text":"eceff4","muted":"aeb8ca","line":"4c566a","accent":"88c0d0","tint":"3b4e61","select":"4c637d","highlight":"665f42","white":"3b4252","dark":true},
+  "dracula": {"name":"Dracula","bg":"282a36","panel":"343746","paper":"282a36","text":"f8f8f2","muted":"a3a8c2","line":"44475a","accent":"bd93f9","tint":"45345f","select":"594476","highlight":"655d36","white":"343746","dark":true},
+  "catppuccin": {"name":"Catppuccin","bg":"1e1e2e","panel":"313244","paper":"1e1e2e","text":"cdd6f4","muted":"a6adc8","line":"45475a","accent":"cba6f7","tint":"403753","select":"514465","highlight":"625444","white":"313244","dark":true},
+  "solarized": {"name":"Solarized","bg":"fdf6e3","panel":"eee8d5","paper":"fdf6e3","text":"586e75","muted":"657b83","line":"d8d0b8","accent":"268bd2","tint":"e0e9dc","select":"c9dfde","highlight":"f2dd9c","white":"fffaed","dark":false},
+  "rose-pine": {"name":"Rose Pine","bg":"191724","panel":"26233a","paper":"191724","text":"e0def4","muted":"aaa5c4","line":"403d52","accent":"ebbcba","tint":"473440","select":"604754","highlight":"655344","white":"26233a","dark":true}
+}

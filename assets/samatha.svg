@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Samatha — Dharma wheel</title>
+  <desc id="description">A plain gold eight-spoked Dharma wheel on a transparent background.</desc>
+  <defs>
+    <path id="spoke" d="M256 224V48"/>
+  </defs>
+  <g fill="none" stroke="#b8863b" stroke-width="14" stroke-linecap="round">
+    <circle cx="256" cy="256" r="176"/>
+    <circle cx="256" cy="256" r="32"/>
+    <use href="#spoke"/>
+    <use href="#spoke" transform="rotate(45 256 256)"/>
+    <use href="#spoke" transform="rotate(90 256 256)"/>
+    <use href="#spoke" transform="rotate(135 256 256)"/>
+    <use href="#spoke" transform="rotate(180 256 256)"/>
+    <use href="#spoke" transform="rotate(225 256 256)"/>
+    <use href="#spoke" transform="rotate(270 256 256)"/>
+    <use href="#spoke" transform="rotate(315 256 256)"/>
+  </g>
+</svg>

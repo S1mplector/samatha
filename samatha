@@ -1,0 +1,45 @@
+#!/usr/bin/python3
+"""Run Samatha in the current terminal, or create a window for desktop launches."""
+import os
+from pathlib import Path
+import shlex
+import shutil
+import sys
+
+root=Path(__file__).resolve().parent
+args=sys.argv[1:]
+legacy='--legacy' in args
+args=[a for a in args if a!='--legacy']
+window='--window' in args
+if window and '--here' in args:raise SystemExit('Choose either --here or --window.')
+here='--here' in args or (not window and sys.stdin.isatty() and sys.stdout.isatty())
+args=[a for a in args if a not in ('--here','--window')]
+headless=any(a in args for a in ('--version','--help','-h','--config','--render'))
+if not here and not headless:
+    kitty=shutil.which('kitty')
+    if not kitty:raise SystemExit('Install Kitty for rich text and images, or use samatha --here with SAMATHA_EDITOR set.')
+    command=[kitty,'--class','Samatha','--title','Samatha','--config','NONE',
+        '-o','initial_window_width=1200','-o','initial_window_height=820',
+        '-o','remember_window_size=no','-o','window_padding_width=0',
+        '-o','font_family=DejaVu Sans Mono','-o','font_size=11',
+        '-o','background=#ffffff','-o','foreground=#202020',
+        '-o','confirm_os_window_close=0']
+    if not legacy:
+        command+=['--config',str(root/'assets/kitty-shortcuts.conf')]
+    command+=['/usr/bin/python3',str(root/'samatha'),'--here']
+    if legacy:command.append('--legacy')
+    os.execv(kitty,command+args)
+if legacy:os.execv('/usr/bin/python3',['/usr/bin/python3',str(root/'app.py'),*args])
+binary=root/'bin/samatha-tui'
+os.environ['SAMATHA_APP_DIR']=str(root)
+if not binary.exists():raise SystemExit('Samatha has not been built. Run ./build.sh first.')
+if not any(a in args for a in ('--version','--help','-h','--config')):
+    from rich_storage import import_library
+    data=Path(os.environ.get('XDG_DATA_HOME',str(Path.home()/'.local/share')))/'samatha'
+    for i,arg in enumerate(args):
+        if arg=='--data-dir' and i+1<len(args):data=Path(args[i+1]).expanduser()
+        elif arg.startswith('--data-dir='):data=Path(arg.split('=',1)[1]).expanduser()
+    if not any(a=='--notes-dir' or a.startswith('--notes-dir=') for a in args):import_library(data)
+if not os.environ.get('SAMATHA_EDITOR') and os.environ.get('KITTY_WINDOW_ID'):
+    os.environ['SAMATHA_EDITOR']=shlex.join(['/usr/bin/python3',str(root/'rich_editor.py')])
+os.execv(str(binary),[str(binary),*args])

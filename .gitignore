@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+.runtime/
+.coverage
+test-output/
+*.log
+.DS_Store
+bin/
+work/
