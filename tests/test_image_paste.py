@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 from PIL import Image
 from rich_editor import RichNotebook
+from rich_storage import read_rich
 
 
 class InlineImageTests(unittest.TestCase):
@@ -44,8 +45,25 @@ class InlineImageTests(unittest.TestCase):
         self.assertIsNone(app.overlay);self.assertIsNone(app.prompt)
         self.assertEqual(geometry,(app.sidebar_outer,app.content_left,app.body_top,app.body_bottom))
         self.assertEqual(sum(b['type']=='image' for b in app.doc.blocks),1)
-        self.assertTrue(app.save())
+        # The clipboard operation itself commits both the image and reference.
+        saved,_=read_rich(self.path)
+        block=next(b for b in saved['blocks'] if b['type']=='image')
+        self.assertTrue((self.path.parent/block['path']).is_file())
+        self.assertFalse(app.doc.dirty)
         app.key('z',ctrl=True);self.assertEqual(app.doc.blocks,original)
+
+    def test_annotation_stays_inline_and_survives_reopen(self):
+        app=self.app;image=io.BytesIO();Image.new('RGB',(30,20),'purple').save(image,format='PNG');image.seek(0)
+        app.import_image(image)
+        index=next(i for i,b in enumerate(app.doc.blocks) if b['type']=='image');app.doc.cursor=(index,0)
+        app.key('enter',alt=True);self.assertTrue(app.prompt['inline']);self.assertIsNone(app.overlay)
+        app.feed(b'Keep this detail in view\r')
+        saved,_=read_rich(self.path)
+        self.assertEqual(saved['blocks'][index]['caption'],'Keep this detail in view')
+        app.doc.undo();self.assertEqual(app.doc.blocks[index]['caption'],'Pasted image')
+        app.store.lock.close();reopened=RichNotebook(self.path)
+        try:self.assertEqual(reopened.doc.blocks[index]['caption'],'Keep this detail in view')
+        finally:reopened.store.lock.close()
 
     def test_ctrl_g_does_not_insert_text_when_clipboard_has_no_image(self):
         app=self.app;original=copy.deepcopy(app.doc.data)

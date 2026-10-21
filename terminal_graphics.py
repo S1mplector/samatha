@@ -2,7 +2,10 @@
 import base64
 import io
 import sys
+import os
+import tempfile
 import cairo
+from PIL import Image
 
 
 def terminal_mode(mode):
@@ -12,8 +15,34 @@ def terminal_mode(mode):
 
 
 class KittyRenderer:
-    def __init__(self):
+    def __init__(self,local_files=None):
         self.last_rows=None;self.last_image=None;self.last_size=None;self.last_pixels=None
+        self.local_files=(bool(os.environ.get('KITTY_WINDOW_ID')) and not os.environ.get('SSH_CONNECTION')
+                          if local_files is None else local_files)
+        self.pending_files=[]
+
+    def encode(self,band):
+        """Large local frames use Kitty's temporary-file transport, avoiding PNG
+        compression and megabytes of PTY traffic while scrolling screenshots.
+        Kitty deletes each private file after reading it. Remote sessions use PNG.
+        """
+        width,height=band.get_width(),band.get_height()
+        if self.local_files and width*height*4>256*1024:
+            self.pending_files=[path for path in self.pending_files if os.path.exists(path)]
+            # Bound outstanding files if the receiving terminal stops consuming.
+            if len(self.pending_files)<8:
+                path=None
+                try:
+                    mode,raw=('RGBa','BGRa') if band.get_format()==cairo.FORMAT_ARGB32 else ('RGB','BGRX')
+                    image=Image.frombytes(mode,(width,height),bytes(band.get_data()),'raw',raw,band.get_stride(),1).convert('RGBA')
+                    fd,path=tempfile.mkstemp(prefix='samatha-tty-graphics-protocol-')
+                    with os.fdopen(fd,'wb') as out:out.write(image.tobytes())
+                    self.pending_files.append(path)
+                    return f'f=32,t=t,s={width},v={height}',base64.b64encode(os.fsencode(path))
+                except OSError:
+                    if path and os.path.exists(path):os.unlink(path)
+        stream=io.BytesIO();band.write_to_png(stream)
+        return 'f=100',base64.b64encode(stream.getvalue())
 
     def transmit(self,surface,lines=(),row=1,col=1,size=None,base_style=''):
         # Keep one image placement and replace only changed scanlines in its root
@@ -40,10 +69,9 @@ class KittyRenderer:
                 while pixels[(bottom-1)*stride:bottom*stride]==self.last_pixels[(bottom-1)*stride:bottom*stride]:bottom-=1
             band=cairo.ImageSurface.create_for_data(surface.get_data()[top*stride:bottom*stride],
                                                    surface.get_format(),width,bottom-top,stride)
-            stream=io.BytesIO();band.write_to_png(stream)
-            payload=base64.b64encode(stream.getvalue())
+            encoding,payload=self.encode(band)
             if replace:parts.append(f'\x1b[{row};{col}H'.encode())
-            action='a=T,f=100,i=42,p=1,q=2,C=1' if replace else f'a=f,f=100,i=42,r=1,X=1,x=0,y={top},q=2'
+            action=f'a=T,{encoding},i=42,p=1,q=2,C=1' if replace else f'a=f,{encoding},i=42,r=1,X=1,x=0,y={top},q=2'
             for offset in range(0,len(payload),4096):
                 more=int(offset+4096<len(payload))
                 head=f'{action},m={more}' if offset==0 else f'a={"T" if replace else "f"},m={more},q=2'

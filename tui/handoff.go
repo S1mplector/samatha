@@ -21,6 +21,13 @@ type screenHandoff struct {
 	terminal                       *os.File
 	mu                             sync.Mutex
 	held, waiting, resumeRequested bool
+	imageCleanup                   string
+}
+
+func (s *screenHandoff) SetImageCleanup(cleanup string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.imageCleanup = cleanup
 }
 
 // Bubble Tea requires the complete term.File interface to detect terminal size
@@ -91,6 +98,9 @@ func (s *screenHandoff) Write(data []byte) (int, error) {
 func (s *screenHandoff) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.imageCleanup != "" {
+		_, _ = io.WriteString(s.out, s.imageCleanup)
+	}
 	// Also restore the user's screen if the program fails during a handoff.
 	if s.held {
 		_, err := io.WriteString(s.out, "\x1b_Ga=d,d=I,i=42,q=2\x1b\\\x1b[?1016l\x1b[?1002l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1049l")

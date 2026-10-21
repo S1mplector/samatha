@@ -1,6 +1,10 @@
+<p align="center"><img src="assets/samatha.svg" alt="Samatha Dharma wheel" width="80"></p>
+
 # Samatha
 
-Samatha is a terminal notebook with a folder tree, Markdown preview, rich text and images, seven themes, and keyboard navigation. Its browser is based on [armandsauzay/note](https://github.com/armandsauzay/note); the upstream MIT license is retained in `tui/LICENSE.note`.
+Samatha is a fast visual notebook for your terminal. Paste a screenshot, keep an annotation beside it, and move between browsing and writing in the same window. Rich text, seven themes, and a quiet folder tree keep your observations close to their context.
+
+Select an image and press **Alt+Enter** or click **Annotate** to add a short observation in the footer. Annotations stay with the image, appear in browsing and editing, and support undo. **Tab** in the browser hides the sidebar for a focused view.
 
 For Linux, install Go 1.21 or newer and the system Python dependencies. On Ubuntu/Debian:
 
@@ -25,6 +29,8 @@ Renaming uses an inline field and keeps the panes in place. **Enter** confirms, 
 
 Select an image in the editor and drag its bottom-right corner to resize it, or use the **−**, **+**, and **Reset** controls beneath it. **Alt+← / Alt+→** makes the selected image smaller/larger; **Alt+0** restores its automatic size. Resizing preserves proportions and the original image file, is undoable with **Ctrl+Z**, and is saved in the rich document. Images fit narrower windows and return to their saved size when space allows.
 
+Pasted images and their note references are saved immediately. Local Kitty sessions show images inline while browsing, with normal viewport scrolling and clipping; other terminals and remote sessions retain Markdown image links. The internal `images/` attachment folder stays out of the note tree. Type **`---` on its own line, then Enter** to create an undoable line separator.
+
 Existing JSON notebooks are copied once into `~/.local/share/samatha/notes/`. The original notebooks remain intact. Every rich note has a hidden `.NAME.md.samatha.json` companion containing the full rich document; images live in the folder's `images/` directory. Keep these files together when copying a notebook. The Markdown file is a readable preview. If an external editor changes it, the rich editor preserves those edits as a separate `-external-…md` copy before restoring the rich version. Rich-save backups are in `.samatha-backups/`; archived notes and rich companions are in `.archive/`.
 
 **Ctrl+T** changes themes while editing; Settings → Theme lists all seven themes. The selected theme is shared with the browser and remembered. **Ctrl+N** creates a note in the current notebook; **Ctrl+Shift+N** creates a new notebook.
@@ -41,6 +47,8 @@ Development: `model.py` owns document mutations, validation and undo; `rich_stor
 
 With Kitty installed, validate shortcut parsing and routing using its own matcher: `kitty +runpy "import runpy; runpy.run_path('tools/check_kitty_shortcuts.py')"`. No GUI window is opened by this check.
 
+Verify inline browser images, scrolling, editor transitions, and image cleanup through a real PTY and Kitty's parser with `kitty +runpy "import runpy; runpy.run_path('tools/check_browser_graphics.py')"`.
+
 Add editing actions through `editor_commands.py` without changing the input parser. Commands run only in the editing context, outside prompts and settings. For example, after constructing an editor:
 
 ```python
@@ -55,6 +63,8 @@ editor.commands.register(Command(
 Duplicate shortcuts raise an error unless `replace=True` is explicitly supplied. Mutations should use `Document` methods so undo and autosave work; direct document changes must call `checkpoint()` before modifying and `mark()` afterward. New block types also need validation, storage export/import, layout, rendering, and editing tests.
 
 Paragraph layouts use a bounded cache keyed by content, formatting, selection, font, theme and width. Decoded and scaled images share a 64 MiB cache budget. Kitty updates only changed shell rows and replaces changed scanlines in a single image's root frame (`a=f,r=1`), so typing beside a screenshot does not recompress and resend it. Resizing and repositioning replace the complete image. Undo snapshots copy integer style arrays directly; unchanged saves avoid rewriting documents, settings and timer state.
+
+Large local editor updates use private temporary pixel files that Kitty deletes after reading, avoiding PNG compression and large PTY writes during scrolling. Small updates and remote sessions use the direct PNG transport. Measure screenshot scrolling with `/usr/bin/python3 tools/benchmark_typing.py --scroll`.
 
 Run `/usr/bin/python3 tools/benchmark.py` for rendering timings, or `/usr/bin/python3 tools/benchmark_typing.py` to measure keystroke-to-complete-frame latency through a real PTY on disposable short, long, and screenshot-heavy notes. The PTY benchmark includes input handling, drawing, compression, and transport, but excludes GPU presentation. Use `--editor /path/to/another/checkout/rich_editor.py` for comparisons. Verify output pixel-for-pixel through Kitty's own graphics parser with `kitty +runpy "import runpy; runpy.run_path('tools/check_kitty_graphics.py')"`; this also checks that partial updates keep one image and release it on cleanup, without opening a window.
 

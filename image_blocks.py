@@ -1,7 +1,7 @@
 """Image display and resizing, reusable across Samatha editor shells."""
 import cairo
 import math
-from drawing import color, label
+from drawing import color, label, text_layout, PangoCairo
 
 
 class ImageEditing:
@@ -16,7 +16,14 @@ class ImageEditing:
             width=min(available,block.get('width',default))
             ratio=width/image.get_width()
             geom.update(image=image,image_path=str(path),iw=width,ih=image.get_height()*ratio,ratio=ratio)
-            geom['h']=geom['ih']+58
+            caption=block.get('caption','')
+            key=('image-caption',caption,available)
+            layout=self.paragraph_cache.get(key)
+            if layout is None:
+                layout=text_layout(cairo.Context(image),caption,11,width=available)
+                self.paragraph_cache.put(key,layout,len(caption)+1)
+            geom.update(caption_layout=layout,caption_height=max(18,layout.get_pixel_size()[1]))
+            geom['h']=geom['ih']+geom['caption_height']+40
         except Exception:geom['h']=60
 
     def render_image(self,ctx,g,x,y):
@@ -38,18 +45,28 @@ class ImageEditing:
             ctx.save();ctx.translate(x,y);ctx.scale(g['ratio'],g['ratio'])
             ctx.set_source_surface(g['image'],0,0);ctx.paint();ctx.restore()
         else:ctx.set_source_surface(scaled,ix,iy);ctx.paint()
-        ctx.save();ctx.rectangle(x,y+g['ih']+4,g['w'],18);ctx.clip()
-        label(ctx,block.get('caption',''),x,y+g['ih']+4,11,p['muted'],width=g['w']);ctx.restore()
+        color(ctx,p['muted']);ctx.move_to(x,y+g['ih']+4);PangoCairo.show_layout(ctx,g['caption_layout'])
         if self.doc.cursor[0]!=g['index'] or self.overlay or self.prompt:return
         color(ctx,p['accent']);ctx.set_line_width(2);ctx.rectangle(x-1,y-1,g['iw']+2,g['ih']+2);ctx.stroke()
         # A corner handle changes only the displayed size; the original stays intact.
         ctx.rectangle(x+g['iw']-6,y+g['ih']-6,12,12);ctx.fill()
-        cy=y+g['ih']+24
+        cy=y+g['ih']+g['caption_height']+6
         if cy<self.body_top or cy+25>self.body_bottom:return
         self.button(ctx,'−',x,cy,28,25,lambda:self.resize_selected_image(-32))
         self.button(ctx,'+',x+34,cy,28,25,lambda:self.resize_selected_image(32))
         self.button(ctx,'Reset',x+68,cy,55,25,lambda:self.resize_selected_image(reset=True))
-        label(ctx,f'{round(g["iw"])} × {round(g["ih"])}',x+133,cy+5,11,p['muted'])
+        self.button(ctx,'Annotate',x+129,cy,83,25,self.annotate_image)
+        label(ctx,f'{round(g["iw"])} × {round(g["ih"])}',x+222,cy+5,11,p['muted'])
+
+    def annotate_image(self):
+        block=self.doc.blocks[self.doc.cursor[0]]
+        if block['type']!='image':return
+        def apply(value):
+            if value!=block.get('caption',''):
+                self.doc.checkpoint();block['caption']=value;self.doc.mark();self.save()
+        self.request_prompt('Image annotation',block.get('caption',''),apply)
+        self.focus_button=-1
+        self.prompt.update(inline=True,location='footer',limit=240)
 
     def resize_selected_image(self,delta=0,reset=False):
         index=self.doc.cursor[0]

@@ -72,6 +72,9 @@ type Model struct {
 	width, height, sidebarOuter, bodyHeight int
 	renderer                                *glamour.TermRenderer
 	previewPath, previewText                string
+	previewGraphics                         string
+	previewImageCount                       int
+	previewImages                           []*previewImage
 	input                                   textinput.Model
 	prompt, promptPath                      string
 	message                                 string
@@ -117,7 +120,7 @@ func (m *Model) refresh(selected string) error {
 		// Keep the reference's alphabetical directory/file ordering.
 		sort.Slice(entries, func(i, j int) bool { return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name()) })
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".") || entry.Type()&os.ModeSymlink != 0 {
+			if strings.HasPrefix(entry.Name(), ".") || entry.Type()&os.ModeSymlink != 0 || entry.IsDir() && entry.Name() == "images" {
 				continue
 			}
 			path := filepath.Join(dir, entry.Name())
@@ -236,12 +239,13 @@ func (m *Model) resize(w, h int) {
 }
 func (m *Model) renderPreview() {
 	content := safeText(m.previewText)
+	content, images := m.imagePreview(content)
 	if m.renderer != nil {
 		if rendered, err := m.renderer.Render(content); err == nil {
 			content = rendered
 		}
 	}
-	m.viewport.SetContent(content)
+	m.viewport.SetContent(m.replaceImageTokens(content, images))
 }
 func (m *Model) updatePreview() {
 	if len(m.notes) == 0 {
@@ -720,7 +724,7 @@ func (m *Model) View() string {
 	}
 	p := m.palette()
 	frame := lipgloss.NewStyle().Background(lipgloss.Color("#" + p.Bg)).Foreground(lipgloss.Color("#" + p.Text)).Width(m.width).Height(m.height).Render(header(m.width) + "\n\n" + body + "\n" + m.footer())
-	return m.themedFrame(frame)
+	return m.visibleImageGraphics() + m.themedFrame(frame)
 }
 func run() error {
 	cfg, err := loadConfig()

@@ -126,6 +126,16 @@ class Document:
             self.cursor = (i+len(new)-1, end)
         self.mark()
 
+    def newline(self):
+        """Turn a completed Markdown rule into an undoable divider on Enter."""
+        i,offset=self.cursor;block=self.blocks[i]
+        if (not self.selection() and block['type']=='text' and block['kind']=='body'
+                and offset==len(block['text']) and block['text'].strip()=='---'):
+            self.checkpoint()
+            self.blocks[i:i+1]=[{'type':'divider'},paragraph()]
+            self.cursor=(i+1,0);self.anchor=None;self.mark()
+        else:self.insert('\n')
+
     def add_block(self, block):
         self.checkpoint()
         self._delete_selection()
@@ -311,18 +321,21 @@ def to_html(blocks):
 
 DEFAULT_SETTINGS={'font':'DejaVu Sans','font_size':19,'theme':'Paper','autosave':True,'autosave_seconds':1,'focus_minutes':25,'break_minutes':5,'line_spacing':1.45}
 
-def atomic_json(path, data):
+def atomic_bytes(path, data):
     path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
     fd,tmp=tempfile.mkstemp(dir=path.parent,prefix='.'+path.name)
     try:
-        with os.fdopen(fd,'w') as f:
-            json.dump(data,f,ensure_ascii=False,indent=2); f.flush(); os.fsync(f.fileno())
+        with os.fdopen(fd,'wb') as f:
+            f.write(data); f.flush(); os.fsync(f.fileno())
         os.replace(tmp,path)
         dfd=os.open(path.parent,os.O_RDONLY)
         try: os.fsync(dfd)
         finally: os.close(dfd)
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
+
+def atomic_json(path, data):
+    atomic_bytes(path,json.dumps(data,ensure_ascii=False,indent=2).encode('utf-8'))
 
 class Store:
     def __init__(self, root):

@@ -7,6 +7,14 @@ from unittest.mock import patch
 from model import Document, Store, paragraph, BOLD, ITALIC, UNDERLINE, RichParser, atomic_json, validate_document, previous_word
 
 class EditingTests(unittest.TestCase):
+    def test_markdown_rule_on_enter_is_undoable(self):
+        d=Document();d.insert('---');d.newline()
+        self.assertEqual(d.blocks,[{'type':'divider'},paragraph()]);self.assertEqual(d.cursor,(1,0))
+        d.undo();self.assertEqual(d.blocks,[paragraph('---')]);d.undo(True)
+        d.insert('After');self.assertEqual(d.blocks[1]['text'],'After')
+        for text in ('before ---','--','----'):
+            d=Document();d.insert(text);d.newline();self.assertEqual(d.blocks[0]['type'],'text')
+
     def test_undo_snapshots_isolate_styles_and_extension_metadata(self):
         d=Document();d.insert('abc');d.data['extension']={'tags':['original']}
         d.blocks[0]['extension']={'nested':['original']}

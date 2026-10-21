@@ -52,6 +52,8 @@ def default_commands():
     ]:registry.register(Command(name,key,action))
     registry.register(Command('redo-shift','z',lambda e:e.doc.undo(True),shift=True))
     registry.register(Command('image-file','g',lambda e:e.image_path(),shift=True))
+    registry.register(Command('annotate-image','enter',lambda e:e.annotate_image(),ctrl=False,alt=True,
+                              enabled=lambda e:e.doc.blocks[e.doc.cursor[0]]['type']=='image'))
     for name,key,delta,reset in [('smaller-image','left',-32,False),('larger-image','right',32,False),('reset-image','0',0,True)]:
         registry.register(Command(name,key,lambda e,d=delta,r=reset:e.resize_selected_image(d,reset=r),
                                   ctrl=False,alt=True,enabled=lambda e:e.doc.blocks[e.doc.cursor[0]]['type']=='image'))

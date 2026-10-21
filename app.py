@@ -33,6 +33,7 @@ from terminal_graphics import KittyRenderer, terminal_mode
 from editor_commands import default_commands
 from PIL import Image, ImageOps
 from model import Document, Store, DEFAULT_SETTINGS, paragraph, length, RichParser, to_html, previous_word, BOLD, ITALIC, UNDERLINE, HIGHLIGHT
+from model import atomic_bytes
 
 HERE=Path(__file__).resolve().parent
 THEMES=json.loads((HERE/'tui/themes.json').read_text())
@@ -364,10 +365,11 @@ class Notebook(ImageEditing,TextLayout):
             rel=Path('images')/(digest+'.png'); path=self.store.root/self.book['id']/rel
             path.parent.mkdir(parents=True,exist_ok=True)
             if not path.exists():
-                tmp=path.with_suffix('.tmp'); tmp.write_bytes(raw); os.replace(tmp,path)
+                atomic_bytes(path,raw)
             caption=source.name if isinstance(source,Path) else 'Pasted image'
             self.doc.add_block({'type':'image','path':str(rel),'caption':caption})
-            self.overlay=None; self.notify('Image added to your page')
+            self.overlay=None
+            if self.save():self.notify('Image saved to your page')
         except Exception as e: self.notify('Could not add image: '+str(e),8)
 
     def paste(self,image_only=False):
@@ -541,7 +543,7 @@ class Notebook(ImageEditing,TextLayout):
         if key in ('left','right','up','down','home','end','pageup','pagedown'): self.move(key,shift,ctrl)
         elif key=='backspace': self.doc.delete(); self.render_needed=True
         elif key=='delete': self.doc.delete(False); self.render_needed=True
-        elif key=='enter': self.doc.insert('\n'); self.render_needed=True
+        elif key=='enter': self.doc.newline(); self.render_needed=True
         elif key=='tab': self.doc.insert('    '); self.render_needed=True
         elif text and not ctrl and not alt: self.doc.insert(text); self.render_needed=True
 

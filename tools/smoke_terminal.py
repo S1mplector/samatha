@@ -39,7 +39,7 @@ def main():
         # Deliberately differ from the model's 120x36 fallback dimensions.
         fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack('HHHH',47,141,1410,940))
         env={**os.environ,'TERM':'xterm-kitty','KITTY_WINDOW_ID':'smoke',
-             'XDG_CONFIG_HOME':str(root/'config'),'XDG_DATA_HOME':str(root/'data')}
+             'XDG_CONFIG_HOME':str(root/'config'),'XDG_DATA_HOME':str(root/'data'),'TMPDIR':temp}
         env.pop('SAMATHA_EDITOR',None)
         process=subprocess.Popen([str(ROOT/'samatha'),'--notes-dir',str(notes)],
                                  stdin=slave,stdout=slave,stderr=slave,env=env,start_new_session=True)
@@ -103,6 +103,8 @@ def main():
             # Move over "Body" to the image, then enlarge it using the real CSI key decoder.
             send(b'\x1b[C'*5+b'\x1b[1;3C')
             wait_for(b'Drag corner to resize')
+            send(b'\x1b[13;3u');wait_for(b'Image annotation')
+            send(b'Screenshot detail\r')
             send(b'\x12');wait_for(b'Rename note')
             send(b'Editor title\r');wait_for(b'Editor title')
             start=len(transcript)
@@ -111,6 +113,7 @@ def main():
             saved=json.loads(sidecar(path).read_text())['document']
             assert saved['title']=='Editor title',saved['title']
             assert saved['blocks'][1]['width']==452,saved['blocks'][1]
+            assert saved['blocks'][1]['caption']=='Screenshot detail',saved['blocks'][1]
             # Reopening an unchanged note must also force a complete browser
             # repaint on return; a cached frame must not leave graphics behind.
             send(b'\r');wait_for(b'a=T')

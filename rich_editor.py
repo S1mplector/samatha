@@ -231,17 +231,19 @@ class RichNotebook(Notebook):
         hint='ctrl+=/- size • ctrl+b/i/u style • ctrl+g paste image • ctrl+t theme • ctrl+, settings • esc browse'
         if self.cols<105:hint='ctrl+=/- size • ctrl+b/i/u style • F1 help • esc browse'
         if self.ctrl_held:hint='Backspace deletes highlighted word • release Ctrl to cancel'
-        if self.doc.blocks[self.doc.cursor[0]]['type']=='image':hint='Drag corner to resize • Alt+←/→ smaller/larger • Alt+0 reset • Ctrl+Z undo'
+        if self.doc.blocks[self.doc.cursor[0]]['type']=='image':hint='Alt+Enter annotate • Drag corner to resize • Alt+←/→ size • Alt+0 reset • Ctrl+Z undo'
         if self.prompt and self.prompt.get('inline'):
             hint='Rename note • Enter confirm • Esc cancel • Ctrl+A replace'
             if self.prompt.get('location')=='footer':
                 hint='Image file path • Enter add • Esc cancel • Ctrl+A replace'
+                annotation=self.prompt['title']=='Image annotation'
+                if annotation:hint='Image annotation • Enter save • Esc cancel • Ctrl+A replace'
                 visible=[];used=0
                 for c in reversed(self.prompt['value']+'│'):
                     width=2 if unicodedata.east_asian_width(c) in 'WF' else 0 if unicodedata.combining(c) else 1
                     if used+width>max(1,cols-17):break
                     visible.append(c);used+=width
-                status='Image path: › '+''.join(reversed(visible))
+                status=('Annotation: › ' if annotation else 'Image path: › ')+''.join(reversed(visible))
         lines+=[muted+clip('  '+status,cols),muted+clip('  '+hint,cols)]
         return lines[:rows]
 
@@ -260,8 +262,9 @@ class RichNotebook(Notebook):
             import re
             cw,_=text_layout(ctx,'M',self.ch*.70,'DejaVu Sans Mono').get_pixel_size()
             for row,line in enumerate(lines):
-                ctx.save();ctx.scale(self.cw/max(1,cw),1)
-                label(ctx,re.sub(r'\x1b\[[0-9;]*m','',line),0,row*self.ch,self.ch*.70,p['accent'],font='DejaVu Sans Mono');ctx.restore()
+                layout=text_layout(ctx,re.sub(r'\x1b\[[0-9;]*m','',line),self.ch*.70,'DejaVu Sans Mono')
+                ctx.save();ctx.translate(0,row*self.ch);ctx.scale(self.cw/max(1,cw),1)
+                color(ctx,p['accent']);ctx.move_to(0,0);PangoCairo.show_layout(ctx,layout);ctx.restore()
         ctx.save();ctx.rectangle(self.content_left+self.cw,3*self.ch,self.width-self.content_left-2*self.cw,(self.rows-6)*self.ch);ctx.clip()
         color(ctx,p['bg']);ctx.paint()
         title=clip(self.doc.data['title'],max(1,int((self.width-self.content_left)/self.cw)-7)).rstrip()

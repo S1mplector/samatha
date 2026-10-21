@@ -19,6 +19,8 @@ from model import Document,paragraph
 from rich_storage import write_rich
 from rich_editor import RichNotebook
 folder=Path(sys.argv[1]);(folder/'images').mkdir()
+import tempfile
+tempfile.tempdir=str(folder)
 Image.effect_noise((1200,800),70).convert('RGB').save(folder/'images/test.png')
 doc=Document();doc.blocks[:]=[paragraph('Text above an image. '*4),{'type':'image','path':'images/test.png','width':550},paragraph('Below')]
 path=folder/'Test.md';write_rich(path,doc.data);app=RichNotebook(path)
@@ -31,6 +33,7 @@ def frame(name):
     _,_,w,h,stride,fmt=app.terminal.last_image
     image=Image.frombuffer('RGBA',(w,h),app.terminal.last_pixels,'raw','BGRA',stride,1)
     (folder/(name+'.rgb')).write_bytes(image.convert('RGB').tobytes())
+    (folder/(name+'.rgba')).write_bytes(image.tobytes())
     records.append({'name':name,'width':w,'height':h,'bytes':len(data)})
 try:
     frame('initial')
@@ -58,14 +61,17 @@ def parse(screen,data):
 
 with tempfile.TemporaryDirectory() as temp:
     folder=Path(temp)
-    records=json.loads(subprocess.check_output(['/usr/bin/python3','-c',fixture,temp],cwd=root))
+    import os
+    records=json.loads(subprocess.check_output(['/usr/bin/python3','-c',fixture,temp],cwd=root,
+        env={**os.environ,'KITTY_WINDOW_ID':'graphics-test'}))
     screen=Screen(None,100,200)
     for record in records:
         name=record['name'];data=(folder/(name+'.bin')).read_bytes()
         parse(screen,data);image=screen.grman.image_for_client_id(42)
         assert image is not None,name
         assert (image['width'],image['height'])==(record['width'],record['height']),name
-        assert image['data']==(folder/(name+'.rgb')).read_bytes(),name
+        suffix='.rgba' if len(image['data'])==record['width']*record['height']*4 else '.rgb'
+        assert image['data']==(folder/(name+suffix)).read_bytes(),name
         assert not image['extra_frames'],name
         assert image['refs.count']==1,name
         assert screen.grman.image_count==1,name
@@ -75,4 +81,5 @@ with tempfile.TemporaryDirectory() as temp:
         if name=='unchanged':assert not data
     parse(screen,b'\x1b_Ga=d,d=I,i=42,q=2\x1b\\')
     assert screen.grman.image_count==0
+    assert not list(folder.glob('*tty-graphics-protocol*')),'Kitty did not release transfer files'
     print(f"Verified {len(records)} frames pixel-for-pixel in Kitty; one image, no extra frames, cleanup complete.")
