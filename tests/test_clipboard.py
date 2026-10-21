@@ -5,11 +5,29 @@ the user has copied and never create a window.
 """
 import base64
 import io
+import json
+import os
+from pathlib import Path
+import subprocess
 import unittest
 from unittest.mock import patch
 
 from PIL import Image
 from clipboard import Gdk, Gio, GLib, Gtk, read_clipboard
+
+
+class ClipboardBackendTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('WAYLAND_DISPLAY') and os.environ.get('DISPLAY'),'Needs a Wayland desktop with XWayland')
+    def test_fresh_helper_uses_windowless_bridge_before_gtk_initializes(self):
+        helper=Path(__file__).resolve().parents[1]/'clipboard.py'
+        for inherited in (None,'wayland'):
+            with self.subTest(GDK_BACKEND=inherited):
+                env=dict(os.environ)
+                env.pop('GDK_BACKEND',None)
+                if inherited:env['GDK_BACKEND']=inherited
+                output=subprocess.run(['/usr/bin/python3',str(helper),'--diagnose'],env=env,
+                                      capture_output=True,text=True,check=True,timeout=5)
+                self.assertEqual(json.loads(output.stdout)['backend'],'GdkX11Display')
 
 
 class ClipboardTests(unittest.TestCase):
@@ -89,7 +107,9 @@ class ClipboardTests(unittest.TestCase):
             def read_finish(self,result):
                 raise GLib.Error.new_literal(Gio.io_error_quark(),'Clipboard access denied',Gio.IOErrorEnum.PERMISSION_DENIED)
         result=read_clipboard(True,clipboard=Denied())
-        self.assertIn('Clipboard access denied',result['error'])
+        self.assertIn('denied clipboard access',result['error'])
+        self.assertNotIn('g-io-error-quark',result['error'])
+        self.assertIn('Clipboard access denied',result['detail'])
         self.assertNotIn('No image',result['error'])
 
 

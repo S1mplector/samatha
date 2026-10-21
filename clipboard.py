@@ -1,7 +1,16 @@
 """Desktop clipboard bridge. GTK is used only for clipboard access, never windows."""
 import base64
 import json
+import os
 import sys
+
+# A helper without a focused surface cannot receive a Wayland clipboard offer.
+# Use the desktop's XWayland clipboard bridge, without creating any window.
+# This must run before importing Gtk: PyGObject can initialize it on import.
+# Scope the choice to this helper process, leaving the terminal/app untouched.
+if __name__=='__main__' and os.environ.get('WAYLAND_DISPLAY') and os.environ.get('DISPLAY'):
+    os.environ['GDK_BACKEND']='x11'
+
 import gi
 gi.require_version('Gtk','4.0')
 gi.require_version('Gdk','4.0')
@@ -9,6 +18,14 @@ from gi.repository import Gdk, GLib, Gio, Gtk
 
 MAX_BYTES=25_000_000
 IMAGE_FORMATS=['image/png','image/jpeg','image/webp','image/bmp','image/tiff','image/gif','image/x-bmp']
+
+
+def clipboard_error(error):
+    if isinstance(error,GLib.Error):
+        if error.matches(Gio.io_error_quark(),Gio.IOErrorEnum.PERMISSION_DENIED):
+            return 'Your desktop denied clipboard access. Copy the image again and retry.'
+        return 'Your desktop could not provide the clipboard contents. Copy again and retry.'
+    return str(error)
 
 
 def read_clipboard(image_only=False,*,clipboard=None,timeout_ms=4000):
@@ -41,7 +58,7 @@ def read_clipboard(image_only=False,*,clipboard=None,timeout_ms=4000):
             if mime.startswith('image/'):
                 image_result(raw)
             else: finish(type='html' if mime=='text/html' else 'text',data=raw.decode('utf-8','replace'))
-        except Exception as e: finish(error=str(e))
+        except Exception as e: finish(error=clipboard_error(e),detail=str(e))
     def done_read(obj,res):
         nonlocal stream
         if result:return
@@ -57,7 +74,7 @@ def read_clipboard(image_only=False,*,clipboard=None,timeout_ms=4000):
                 types=offered.get_gtypes();mimes=offered.get_mime_types()
                 if types or mimes:
                     unavailable=unavailable or not (any(m.startswith('image/') for m in mimes) or any(t.is_a(Gdk.Texture.__gtype__) for t in types))
-            finish(error='No image on the clipboard. Copy an image, then press Ctrl+G.' if image_only and unavailable else str(e))
+            finish(error='No image on the clipboard. Copy an image, then press Ctrl+G.' if image_only and unavailable else clipboard_error(e),detail=str(e))
     def done_texture(obj,res):
         if result:return
         try:
@@ -66,7 +83,7 @@ def read_clipboard(image_only=False,*,clipboard=None,timeout_ms=4000):
             texture=None
         if texture is not None:
             try:image_result(texture.save_to_png_bytes().get_data())
-            except Exception as e:finish(error=str(e))
+            except Exception as e:finish(error=clipboard_error(e),detail=str(e))
             return
         # Some applications expose encoded bytes rather than a native texture.
         # Keep those formats and formatted/text paste as compatible fallbacks.
@@ -102,6 +119,10 @@ def own_clipboard(data):
 
 if __name__=='__main__':
     if len(sys.argv)>1 and sys.argv[1]=='write': own_clipboard(json.load(sys.stdin))
+    elif '--diagnose' in sys.argv[1:]:
+        # Report the connection used by a fresh helper without reading content.
+        Gtk.init();display=Gdk.Display.get_default()
+        print(json.dumps({'backend':display.__gtype__.name if display else None}))
     else:
         try: print(json.dumps(read_clipboard(image_only='--image' in sys.argv[1:])))
-        except Exception as e: print(json.dumps({'error':str(e)}))
+        except Exception as e: print(json.dumps({'error':clipboard_error(e),'detail':str(e)}))
