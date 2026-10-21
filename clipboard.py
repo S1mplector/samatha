@@ -7,39 +7,87 @@ gi.require_version('Gtk','4.0')
 gi.require_version('Gdk','4.0')
 from gi.repository import Gdk, GLib, Gio, Gtk
 
-def read_clipboard(image_only=False):
-    Gtk.init()
-    display=Gdk.Display.get_default()
-    if not display: raise RuntimeError('No desktop clipboard available')
-    clipboard=display.get_clipboard()
+MAX_BYTES=25_000_000
+IMAGE_FORMATS=['image/png','image/jpeg','image/webp','image/bmp','image/tiff','image/gif','image/x-bmp']
+
+
+def read_clipboard(image_only=False,*,clipboard=None,timeout_ms=4000):
+    if clipboard is None:
+        Gtk.init()
+        display=Gdk.Display.get_default()
+        if not display: raise RuntimeError('No desktop clipboard available')
+        clipboard=display.get_clipboard()
     loop=GLib.MainLoop(); result={}
-    chunks=[]; total=0
+    chunks=[]; total=0; stream=None
+    cancelled=Gio.Cancellable()
+    def finish(**value):
+        if result:return
+        result.update(value);loop.quit()
+    def image_result(raw):
+        if not raw:raise ValueError('Clipboard image is empty')
+        if len(raw)>MAX_BYTES:raise ValueError('Clipboard content is too large')
+        finish(type='image',data=base64.b64encode(raw).decode())
     def read_chunk(stream,res,mime):
         nonlocal total
+        if result:return
         try:
             data=stream.read_bytes_finish(res).get_data()
             if data:
                 chunks.append(data); total+=len(data)
-                if total>25_000_000: raise ValueError('Clipboard content is too large')
-                stream.read_bytes_async(65536,GLib.PRIORITY_DEFAULT,None,read_chunk,mime)
+                if total>MAX_BYTES: raise ValueError('Clipboard content is too large')
+                stream.read_bytes_async(65536,GLib.PRIORITY_DEFAULT,cancelled,read_chunk,mime)
                 return
             raw=b''.join(chunks)
             if mime.startswith('image/'):
-                result.update(type='image',data=base64.b64encode(raw).decode())
-            else: result.update(type='html' if mime=='text/html' else 'text',data=raw.decode('utf-8','replace'))
-        except Exception as e: result.update(error=str(e))
-        loop.quit()
+                image_result(raw)
+            else: finish(type='html' if mime=='text/html' else 'text',data=raw.decode('utf-8','replace'))
+        except Exception as e: finish(error=str(e))
     def done_read(obj,res):
+        nonlocal stream
+        if result:return
         try:
             stream,mime=obj.read_finish(res)
-            stream.read_bytes_async(65536,GLib.PRIORITY_DEFAULT,None,read_chunk,mime)
+            stream.read_bytes_async(65536,GLib.PRIORITY_DEFAULT,cancelled,read_chunk,mime)
         except Exception as e:
-            result.update(error='No image on the clipboard. Copy an image, then press Ctrl+G.' if image_only else str(e)); loop.quit()
-    formats=['image/png','image/jpeg','image/webp','image/bmp']
-    if not image_only:formats+=['text/html','text/plain;charset=utf-8','text/plain']
-    clipboard.read_async(formats,GLib.PRIORITY_DEFAULT,None,done_read)
-    GLib.timeout_add_seconds(4,lambda:(result.update(error='Clipboard did not respond'),loop.quit(),False)[-1])
-    loop.run(); return result
+            unavailable=isinstance(e,GLib.Error) and e.matches(Gio.io_error_quark(),Gio.IOErrorEnum.NOT_SUPPORTED)
+            # X11 sometimes reports unsupported formats as a generic FAILED
+            # error. Only call it empty when the advertised formats confirm it.
+            if image_only and hasattr(clipboard,'get_formats'):
+                offered=clipboard.get_formats()
+                types=offered.get_gtypes();mimes=offered.get_mime_types()
+                if types or mimes:
+                    unavailable=unavailable or not (any(m.startswith('image/') for m in mimes) or any(t.is_a(Gdk.Texture.__gtype__) for t in types))
+            finish(error='No image on the clipboard. Copy an image, then press Ctrl+G.' if image_only and unavailable else str(e))
+    def done_texture(obj,res):
+        if result:return
+        try:
+            texture=obj.read_texture_finish(res)
+        except GLib.Error:
+            texture=None
+        if texture is not None:
+            try:image_result(texture.save_to_png_bytes().get_data())
+            except Exception as e:finish(error=str(e))
+            return
+        # Some applications expose encoded bytes rather than a native texture.
+        # Keep those formats and formatted/text paste as compatible fallbacks.
+        formats=list(IMAGE_FORMATS)
+        if not image_only:formats+=['text/html','text/plain;charset=utf-8','text/plain']
+        clipboard.read_async(formats,GLib.PRIORITY_DEFAULT,cancelled,done_read)
+    def timed_out():
+        finish(error='Clipboard did not respond');return False
+    # Screenshot tools can offer GdkTexture/GdkMemoryTexture instead of one of
+    # the raw MIME types. GTK negotiates and converts those to a PNG for us.
+    clipboard.read_texture_async(cancelled,done_texture)
+    timeout=GLib.timeout_add(timeout_ms,timed_out)
+    try:
+        loop.run()
+        return result
+    finally:
+        cancelled.cancel()
+        if GLib.MainContext.default().find_source_by_id(timeout):GLib.source_remove(timeout)
+        if stream is not None:
+            try:stream.close(None)
+            except GLib.Error:pass
 
 def own_clipboard(data):
     Gtk.init(); clip=Gdk.Display.get_default().get_clipboard()
