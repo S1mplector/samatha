@@ -1,5 +1,6 @@
 """Image display and resizing, reusable across Samatha editor shells."""
 import cairo
+import math
 from drawing import color, label
 
 
@@ -14,13 +15,29 @@ class ImageEditing:
             default=min(image.get_width(),320*image.get_width()/image.get_height())
             width=min(available,block.get('width',default))
             ratio=width/image.get_width()
-            geom.update(image=image,iw=width,ih=image.get_height()*ratio,ratio=ratio)
+            geom.update(image=image,image_path=str(path),iw=width,ih=image.get_height()*ratio,ratio=ratio)
             geom['h']=geom['ih']+58
         except Exception:geom['h']=60
 
     def render_image(self,ctx,g,x,y):
         p=self.palette;block=g['block']
-        ctx.save();ctx.translate(x,y);ctx.scale(g['ratio'],g['ratio']);ctx.set_source_surface(g['image'],0,0);ctx.paint();ctx.restore()
+        # Scale a screenshot once at each display size / subpixel position.
+        # Include the fractional origin so cached pixels stay aligned on scroll.
+        ix,iy=math.floor(x),math.floor(y);fx,fy=x-ix,y-iy
+        key=('scaled',g['image_path'],g['ratio'],fx,fy,p['bg'])
+        width,height=max(1,math.ceil(g['iw']+fx)),max(1,math.ceil(g['ih']+fy))
+        scaled=self.image_cache.get(key)
+        if scaled is None and width*height*4<=self.image_cache.max_cost:
+            scaled=cairo.ImageSurface(cairo.FORMAT_ARGB32,width,height)
+            paint=cairo.Context(scaled);color(paint,p['bg']);paint.paint()
+            paint.translate(fx,fy);paint.scale(g['ratio'],g['ratio'])
+            paint.set_source_surface(g['image'],0,0);paint.paint()
+            self.image_cache.put(key,scaled,scaled.get_stride()*scaled.get_height())
+        if scaled is None:
+            # Very tall images should not allocate an unbounded scaled surface.
+            ctx.save();ctx.translate(x,y);ctx.scale(g['ratio'],g['ratio'])
+            ctx.set_source_surface(g['image'],0,0);ctx.paint();ctx.restore()
+        else:ctx.set_source_surface(scaled,ix,iy);ctx.paint()
         ctx.save();ctx.rectangle(x,y+g['ih']+4,g['w'],18);ctx.clip()
         label(ctx,block.get('caption',''),x,y+g['ih']+4,11,p['muted'],width=g['w']);ctx.restore()
         if self.doc.cursor[0]!=g['index'] or self.overlay or self.prompt:return

@@ -50,15 +50,23 @@ class Document:
         self.dirty = True
         self.changed_at = time.monotonic()
 
+    def snapshot(self):
+        # Style runs contain immutable integer flags. Copy their list directly
+        # instead of recursively visiting every character in every paragraph.
+        data={key:copy.deepcopy(value) for key,value in self.data.items() if key!='blocks'}
+        data['blocks']=[{key:value.copy() if key=='styles' else copy.deepcopy(value)
+                         for key,value in block.items()} for block in self.blocks]
+        return data
+
     def checkpoint(self):
-        self.undo_stack.append((copy.deepcopy(self.data), self.cursor, self.anchor))
+        self.undo_stack.append((self.snapshot(), self.cursor, self.anchor))
         self.undo_stack = self.undo_stack[-150:]
         self.redo_stack.clear()
 
     def undo(self, redo=False):
         source, target = (self.redo_stack, self.undo_stack) if redo else (self.undo_stack, self.redo_stack)
         if source:
-            target.append((copy.deepcopy(self.data), self.cursor, self.anchor))
+            target.append((self.snapshot(), self.cursor, self.anchor))
             self.data, self.cursor, self.anchor = source.pop()
             self.mark()
 

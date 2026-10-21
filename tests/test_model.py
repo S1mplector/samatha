@@ -7,6 +7,16 @@ from unittest.mock import patch
 from model import Document, Store, paragraph, BOLD, ITALIC, UNDERLINE, RichParser, atomic_json, validate_document, previous_word
 
 class EditingTests(unittest.TestCase):
+    def test_undo_snapshots_isolate_styles_and_extension_metadata(self):
+        d=Document();d.insert('abc');d.data['extension']={'tags':['original']}
+        d.blocks[0]['extension']={'nested':['original']}
+        before=copy.deepcopy(d.data);d.checkpoint()
+        d.blocks[0]['styles'][0]=BOLD;d.data['extension']['tags'].append('changed')
+        d.blocks[0]['extension']['nested'].append('changed')
+        after=copy.deepcopy(d.data);d.undo();self.assertEqual(d.data,before)
+        d.undo(True);self.assertEqual(d.data,after)
+        d.undo();d.insert('new');self.assertEqual(d.redo_stack,[])
+
     def test_typing_style_and_selection(self):
         d=Document(); d.insert('one two'); d.anchor=(0,4); d.cursor=(0,7); d.format(BOLD)
         self.assertEqual(d.blocks[0]['styles'],[0]*4+[BOLD]*3)

@@ -1,4 +1,7 @@
 import io
+import math
+import base64
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -72,8 +75,51 @@ class RenderingTests(unittest.TestCase):
         footer=send(('shell','Unsaved'))
         self.assertIn(b'\x1b[2;1HUnsaved',footer);self.assertNotIn(b'a=T',footer)
         ctx=cairo.Context(surface);ctx.set_source_rgb(1,0,0);ctx.paint()
-        self.assertIn(b'a=T',send(('shell','Unsaved')))
+        self.assertIn(b'a=f',send(('shell','Unsaved')))
         self.assertIn(b'\x1b[1;39H\x1b_Ga=T',send(('shell','Unsaved'),row=1))
+
+    def test_scaled_image_cache_matches_direct_cairo_render(self):
+        from PIL import Image, ImageChops
+        from drawing import color
+        app=self.app;folder=app.store.root/app.book['id']/'images';folder.mkdir(exist_ok=True)
+        Image.effect_noise((237,193),65).convert('RGB').save(folder/'cache.png')
+        block={'type':'image','path':'images/cache.png'}
+        for width,x,y in [(113,5,7),(321,5.25,7.75),(113,5.25,7.75)]:
+            block['width']=width
+            g={'index':1,'block':block,'w':400};app.layout_image(g,400)
+            expected=cairo.ImageSurface(cairo.FORMAT_ARGB32,450,400)
+            ctx=cairo.Context(expected);color(ctx,app.palette['bg']);ctx.paint()
+            ctx.save();ctx.translate(x,y);ctx.scale(g['ratio'],g['ratio']);ctx.set_source_surface(g['image'],0,0);ctx.paint();ctx.restore()
+            for _ in range(2):
+                actual=cairo.ImageSurface(cairo.FORMAT_ARGB32,450,400)
+                ctx=cairo.Context(actual);color(ctx,app.palette['bg']);ctx.paint();app.render_image(ctx,g,x,y)
+                # Compare only image pixels, excluding the caption and handles.
+                bottom=math.floor(y+g['ih'])
+                images=[Image.frombuffer('RGBA',(450,400),s.get_data(),'raw','BGRA',s.get_stride(),1)
+                        for s in (expected,actual)]
+                delta=ImageChops.difference(*images).crop((0,0,450,bottom))
+                # Cairo's fixed-point sampling can round by two channel levels
+                # when the destination origin changes; geometry must not shift.
+                self.assertLessEqual(max(high for low,high in delta.getextrema()),2)
+
+    def test_partial_update_sends_only_changed_scanlines_and_erases_old_pixels(self):
+        from PIL import Image
+        renderer=KittyRenderer();surface=cairo.ImageSurface(cairo.FORMAT_ARGB32,30,300)
+        output=io.TextIOWrapper(io.BytesIO());self.addCleanup(output.close)
+        def send():
+            output.buffer.seek(0);output.buffer.truncate()
+            with patch('sys.stdout',output):renderer.transmit(surface)
+            return output.buffer.getvalue()
+        ctx=cairo.Context(surface);ctx.set_source_rgb(0,0,0);ctx.paint();send()
+        for red in (1,0):
+            ctx.set_source_rgb(red,0,0);ctx.rectangle(5,170,2,1);ctx.fill()
+            data=send();self.assertIn(b'a=f,f=100,i=42,r=1,X=1,x=0,y=170',data)
+            self.assertNotIn(b'a=d',data)
+            chunks=re.findall(rb'\x1b_G[^;]+;(.*?)\x1b\\',data,re.S)
+            with Image.open(io.BytesIO(base64.b64decode(b''.join(chunks)))) as patch_image:
+                self.assertEqual(patch_image.size,(30,1))
+                self.assertEqual(patch_image.convert('RGB').getpixel((5,0)),(red*255,0,0))
+        self.assertEqual(send(),b'')
 
 
 if __name__=='__main__':unittest.main()
